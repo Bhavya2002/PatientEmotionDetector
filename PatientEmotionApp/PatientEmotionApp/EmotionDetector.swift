@@ -24,7 +24,7 @@ class EmotionDetector: ObservableObject {
     init() {
         // Load the auto-generated model class
         if let config = try? MLModelConfiguration(),
-           let model = try? PatientEmotionModel(configuration: config).model,
+           let model = try? PatientEmotionModel_4(configuration: config).model,
            let vnModel = try? VNCoreMLModel(for: model) {
             self.emotionModel = vnModel
         } else {

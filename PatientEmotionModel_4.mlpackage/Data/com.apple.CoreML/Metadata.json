@@ -1,0 +1,12 @@
+{
+  "MLModelVersionStringKey" : "--",
+  "MLModelDescriptionKey" : "Dental patient emotion: Stressed \/ Neutral \/ Relaxed",
+  "MLModelCreatorDefinedKey" : {
+    "com.github.apple.coremltools.conversion_date" : "2026-09-01",
+    "com.github.apple.coremltools.source" : "torch==2.13.0",
+    "com.github.apple.coremltools.version" : "9.0",
+    "com.github.apple.coremltools.source_dialect" : "TorchScript"
+  },
+  "MLModelAuthorKey" : "PatientEmotionDetector",
+  "MLModelLicenseKey" : "--"
+}
