@@ -5,59 +5,84 @@ import Combine
 
 class CameraManager: NSObject, ObservableObject {
     @Published var isRecording = false
-    
+    @Published var currentPosition: AVCaptureDevice.Position = .back
+
     let captureSession = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let movieOutput = AVCaptureMovieFileOutput()
-    
-    var onFrameUpdate: ((CVPixelBuffer) -> Void)?
+    private var currentInput: AVCaptureDeviceInput?
+
+    var onFrameUpdate: ((CVPixelBuffer, AVCaptureDevice.Position) -> Void)?
     var onRecordingFinished: ((URL) -> Void)?
-    
+
     override init() {
         super.init()
-        setupCamera()
+        setupCamera(position: .back)
     }
-    
-    private func setupCamera() {
+
+    private func setupCamera(position: AVCaptureDevice.Position) {
         captureSession.sessionPreset = .high
-        
-        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+
+        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position),
               let input = try? AVCaptureDeviceInput(device: camera) else { return }
-        
+
+        // Remove previous input if any
+        if let existing = currentInput {
+            captureSession.removeInput(existing)
+        }
+
         if captureSession.canAddInput(input) {
             captureSession.addInput(input)
+            currentInput = input
         }
-        
-        videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "videoQueue"))
-        videoOutput.alwaysDiscardsLateVideoFrames = true
-        if captureSession.canAddOutput(videoOutput) {
-            captureSession.addOutput(videoOutput)
+
+        // Add outputs only on first setup
+        if captureSession.outputs.isEmpty {
+            videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "videoQueue"))
+            videoOutput.alwaysDiscardsLateVideoFrames = true
+            if captureSession.canAddOutput(videoOutput) { captureSession.addOutput(videoOutput) }
+            if captureSession.canAddOutput(movieOutput) { captureSession.addOutput(movieOutput) }
         }
-        
-        if captureSession.canAddOutput(movieOutput) {
-            captureSession.addOutput(movieOutput)
+
+        updateConnectionOrientations()
+
+        DispatchQueue.main.async { self.currentPosition = position }
+    }
+
+    private func updateConnectionOrientations() {
+        if let conn = videoOutput.connection(with: .video), conn.isVideoOrientationSupported {
+            conn.videoOrientation = .portrait
+            conn.isVideoMirrored = (currentPosition == .front)
         }
-        
-        // Ensure video is portrait
-        if let connection = videoOutput.connection(with: .video), connection.isVideoOrientationSupported {
-            connection.videoOrientation = .portrait
-        }
-        if let connection = movieOutput.connection(with: .video), connection.isVideoOrientationSupported {
-            connection.videoOrientation = .portrait
-        }
-        
-        DispatchQueue.global(qos: .background).async {
-            self.captureSession.startRunning()
+        if let conn = movieOutput.connection(with: .video), conn.isVideoOrientationSupported {
+            conn.videoOrientation = .portrait
+            conn.isVideoMirrored = (currentPosition == .front)
         }
     }
-    
+
+    func flipCamera() {
+        guard !isRecording else { return }   // Don't flip mid-recording
+        let newPosition: AVCaptureDevice.Position = (currentPosition == .back) ? .front : .back
+        captureSession.beginConfiguration()
+        setupCamera(position: newPosition)
+        captureSession.commitConfiguration()
+    }
+
+    func startSession() {
+        DispatchQueue.global(qos: .background).async {
+            if !self.captureSession.isRunning {
+                self.captureSession.startRunning()
+            }
+        }
+    }
+
     func startRecording() {
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(UUID().uuidString).appendingPathExtension("mp4")
         movieOutput.startRecording(to: fileURL, recordingDelegate: self)
         DispatchQueue.main.async { self.isRecording = true }
     }
-    
+
     func stopRecording() {
         movieOutput.stopRecording()
         DispatchQueue.main.async { self.isRecording = false }
@@ -67,7 +92,7 @@ class CameraManager: NSObject, ObservableObject {
 extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        onFrameUpdate?(pixelBuffer)
+        onFrameUpdate?(pixelBuffer, currentPosition)
     }
 }
 
